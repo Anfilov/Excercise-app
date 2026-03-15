@@ -458,9 +458,10 @@ const EXERCISES = [
   { name: 'Reverse Crunch', sound: 'Reverse Crunch.mp3' },
 ];
 
-// ===== AUDIO SYSTEM =====
-const sounds = {};
+// ===== AUDIO SYSTEM (Web Audio API - reliable on iOS) =====
+const audioBuffers = {};
 const soundDurations = {};
+let audioCtx = null;
 
 const soundFiles = [
   'Three.mp3', 'Two.mp3', 'One.mp3', 'Go.mp3', 'Pause.mp3',
@@ -468,48 +469,75 @@ const soundFiles = [
   ...EXERCISES.map(e => e.sound)
 ];
 
-let audioUnlocked = false;
+function getAudioContext() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioCtx;
+}
 
-function preloadSounds() {
-  [...new Set(soundFiles)].forEach(file => {
-    const audio = new Audio('sounds/' + encodeURIComponent(file));
-    audio.preload = 'auto';
-    audio.load();
-    sounds[file] = audio;
-    audio.addEventListener('loadedmetadata', () => {
-      soundDurations[file] = audio.duration;
-    });
-  });
+async function preloadSounds() {
+  const ctx = getAudioContext();
+  const unique = [...new Set(soundFiles)];
+  await Promise.all(unique.map(async file => {
+    try {
+      const resp = await fetch('sounds/' + encodeURIComponent(file));
+      const arrayBuf = await resp.arrayBuffer();
+      const audioBuf = await ctx.decodeAudioData(arrayBuf);
+      audioBuffers[file] = audioBuf;
+      soundDurations[file] = audioBuf.duration;
+    } catch (e) {
+      console.warn('Failed to load sound:', file, e);
+    }
+  }));
 }
 
 function playSound(file) {
-  if (muted || !sounds[file]) return;
-  // Clone the audio node for overlapping playback
-  const clone = sounds[file].cloneNode();
-  clone.play().catch(() => {});
-  // Clean up after playback
-  clone.addEventListener('ended', () => clone.remove());
+  if (muted || !audioBuffers[file]) return;
+  const ctx = getAudioContext();
+  if (ctx.state === 'suspended') ctx.resume();
+  const source = ctx.createBufferSource();
+  source.buffer = audioBuffers[file];
+  source.connect(ctx.destination);
+  source.start(0);
 }
 
-// Unlock audio on iOS/Safari - called from user gesture (start button)
+// Unlock audio on iOS/Safari - must be called from user gesture
 function unlockAudio() {
-  if (audioUnlocked) return;
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const ctx = getAudioContext();
+  if (ctx.state === 'suspended') ctx.resume();
+  // Play a tiny silent buffer to fully unlock
   const buf = ctx.createBuffer(1, 1, 22050);
   const src = ctx.createBufferSource();
   src.buffer = buf;
   src.connect(ctx.destination);
   src.start(0);
-  // Touch one audio element silently to unlock HTML5 audio
-  const first = Object.values(sounds)[0];
-  if (first) {
-    const vol = first.volume;
-    first.volume = 0;
-    first.play().then(() => { first.pause(); first.currentTime = 0; first.volume = vol; }).catch(() => { first.volume = vol; });
-  }
-  setTimeout(() => ctx.close().catch(() => {}), 200);
-  audioUnlocked = true;
 }
+
+// Keep AudioContext alive on iOS (plays silent buffer every 5s)
+let keepAliveInterval = null;
+function startAudioKeepAlive() {
+  stopAudioKeepAlive();
+  keepAliveInterval = setInterval(() => {
+    if (!audioCtx || muted) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const buf = audioCtx.createBuffer(1, 1, 22050);
+    const src = audioCtx.createBufferSource();
+    src.buffer = buf;
+    src.connect(audioCtx.destination);
+    src.start(0);
+  }, 5000);
+}
+function stopAudioKeepAlive() {
+  if (keepAliveInterval) { clearInterval(keepAliveInterval); keepAliveInterval = null; }
+}
+
+// Re-activate audio when app comes back to foreground
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && audioCtx && state !== 'IDLE' && state !== 'FINISHED') {
+    audioCtx.resume().catch(() => {});
+  }
+});
 
 // ===== STATE =====
 let state = 'IDLE';
@@ -823,6 +851,7 @@ function startWorkout() {
 
   showScreen($timer);
   requestWakeLock();
+  startAudioKeepAlive();
   updatePauseIcon();
 
   // Small delay to let audio unlock settle
@@ -837,6 +866,7 @@ function finishWorkout() {
   clearAllSoundTimeouts();
   cancelAnimationFrame(rafId);
   releaseWakeLock();
+  stopAudioKeepAlive();
   setBackground('FINISHED');
   showScreen($finished);
   playSound('Workout Finished.mp3');
@@ -960,6 +990,7 @@ function restart() {
   setBackground('IDLE');
   showScreen($idle);
   releaseWakeLock();
+  stopAudioKeepAlive();
 }
 
 // ===== INIT =====
