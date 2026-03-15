@@ -1,4 +1,4 @@
-const CACHE_NAME = 'interval-timer-v4';
+const CACHE_NAME = 'interval-timer-v5';
 
 const ASSETS = [
   './',
