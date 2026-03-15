@@ -461,7 +461,9 @@ const EXERCISES = [
 // ===== AUDIO SYSTEM (Web Audio API - reliable on iOS) =====
 const audioBuffers = {};
 const soundDurations = {};
+const rawBuffers = {};
 let audioCtx = null;
+let soundsReady = false;
 
 const soundFiles = [
   'Three.mp3', 'Two.mp3', 'One.mp3', 'Go.mp3', 'Pause.mp3',
@@ -469,49 +471,62 @@ const soundFiles = [
   ...EXERCISES.map(e => e.sound)
 ];
 
-function getAudioContext() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  return audioCtx;
-}
-
-async function preloadSounds() {
-  const ctx = getAudioContext();
+// Step 1: Fetch raw data on page load (no AudioContext needed)
+async function fetchSoundData() {
   const unique = [...new Set(soundFiles)];
   await Promise.all(unique.map(async file => {
     try {
       const resp = await fetch('sounds/' + encodeURIComponent(file));
-      const arrayBuf = await resp.arrayBuffer();
-      const audioBuf = await ctx.decodeAudioData(arrayBuf);
-      audioBuffers[file] = audioBuf;
-      soundDurations[file] = audioBuf.duration;
+      rawBuffers[file] = await resp.arrayBuffer();
     } catch (e) {
-      console.warn('Failed to load sound:', file, e);
+      console.warn('Failed to fetch sound:', file, e);
     }
   }));
 }
 
+// Step 2: Decode sounds using AudioContext (called from user gesture)
+async function decodeSounds() {
+  if (soundsReady) return;
+  const unique = [...new Set(soundFiles)];
+  await Promise.all(unique.map(async file => {
+    if (!rawBuffers[file]) return;
+    try {
+      // decodeAudioData consumes the buffer, so we need a copy
+      const copy = rawBuffers[file].slice(0);
+      const audioBuf = await audioCtx.decodeAudioData(copy);
+      audioBuffers[file] = audioBuf;
+      soundDurations[file] = audioBuf.duration;
+    } catch (e) {
+      console.warn('Failed to decode sound:', file, e);
+    }
+  }));
+  soundsReady = true;
+}
+
 function playSound(file) {
-  if (muted || !audioBuffers[file]) return;
-  const ctx = getAudioContext();
-  if (ctx.state === 'suspended') ctx.resume();
-  const source = ctx.createBufferSource();
+  if (muted || !audioBuffers[file] || !audioCtx) return;
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const source = audioCtx.createBufferSource();
   source.buffer = audioBuffers[file];
-  source.connect(ctx.destination);
+  source.connect(audioCtx.destination);
   source.start(0);
 }
 
-// Unlock audio on iOS/Safari - must be called from user gesture
-function unlockAudio() {
-  const ctx = getAudioContext();
-  if (ctx.state === 'suspended') ctx.resume();
+// Unlock audio on iOS/Safari - MUST be called directly from user gesture
+async function unlockAudio() {
+  // Create AudioContext inside the tap handler — this is critical for iOS
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
   // Play a tiny silent buffer to fully unlock
-  const buf = ctx.createBuffer(1, 1, 22050);
-  const src = ctx.createBufferSource();
+  const buf = audioCtx.createBuffer(1, 1, 22050);
+  const src = audioCtx.createBufferSource();
   src.buffer = buf;
-  src.connect(ctx.destination);
+  src.connect(audioCtx.destination);
   src.start(0);
+  // Now decode all sounds with the unlocked context
+  await decodeSounds();
 }
 
 // Keep AudioContext alive on iOS (plays silent buffer every 5s)
@@ -840,8 +855,9 @@ function releaseWakeLock() {
 }
 
 // ===== CONTROLS =====
-function startWorkout() {
-  unlockAudio();
+async function startWorkout() {
+  // Unlock and decode sounds — must happen in user gesture handler
+  await unlockAudio();
 
   currentExercise = 0;
   currentRound = 0;
@@ -854,11 +870,8 @@ function startWorkout() {
   startAudioKeepAlive();
   updatePauseIcon();
 
-  // Small delay to let audio unlock settle
-  setTimeout(() => {
-    startPhase('INTRO', INTRO_TIME);
-    rafId = requestAnimationFrame(animationLoop);
-  }, 300);
+  startPhase('INTRO', INTRO_TIME);
+  rafId = requestAnimationFrame(animationLoop);
 }
 
 function finishWorkout() {
@@ -994,7 +1007,7 @@ function restart() {
 }
 
 // ===== INIT =====
-preloadSounds();
+fetchSoundData();
 
 document.getElementById('start-btn').addEventListener('click', startWorkout);
 $pauseBtn.addEventListener('click', togglePause);
