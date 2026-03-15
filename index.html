@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Interval Timer</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="theme-color" content="#e84c3d">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg-idle: linear-gradient(180deg, #e84c3d, #f39c12);
+    --bg-intro: linear-gradient(180deg, #f0a030, #e8c028);
+    --bg-work: linear-gradient(180deg, #43c67a, #2ea85e);
+    --bg-rest: linear-gradient(180deg, #ef5462, #d63447);
+    --bg-finished: linear-gradient(180deg, #5b6abf, #4353a4);
+    --ring-size: min(70vw, 300px);
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    color: white;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-idle);
+    transition: background 0.6s ease;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* ===== IDLE SCREEN ===== */
+  #idle-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    gap: 1.2rem;
+  }
+
+  #idle-screen h1 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    opacity: 0.9;
+  }
+
+  .total-time {
+    font-size: clamp(3rem, 12vw, 5rem);
+    font-weight: 800;
+    letter-spacing: -2px;
+    text-shadow: 0 2px 20px rgba(0,0,0,0.15);
+  }
+
+  .play-btn {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background: white;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 25px rgba(0,0,0,0.2);
+    transition: transform 0.15s;
+    margin: 0.8rem 0;
+  }
+
+  .play-btn:active { transform: scale(0.92); }
+
+  .play-btn svg {
+    width: 36px;
+    height: 36px;
+    fill: #e74c3c;
+    margin-left: 4px;
+  }
+
+  .params {
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .param-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.85rem 1.2rem;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 500;
+  }
+
+  .param-row:nth-child(1) { background: rgba(76, 175, 80, 0.25); }
+  .param-row:nth-child(2) { background: rgba(244, 67, 54, 0.2); }
+  .param-row:nth-child(3) { background: rgba(255, 255, 255, 0.12); }
+  .param-row:nth-child(4) { background: rgba(100, 140, 255, 0.2); }
+  .param-row:nth-child(5) { background: rgba(255, 193, 7, 0.2); }
+
+  .param-row + .param-row { margin-top: 4px; }
+
+  .param-row .icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    margin-right: 10px;
+    flex-shrink: 0;
+  }
+
+  .param-row .label { flex: 1; }
+  .param-row .value { font-weight: 700; font-size: 1.05rem; }
+
+  /* ===== TIMER SCREEN ===== */
+  #timer-screen {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1rem;
+  }
+
+  .phase-label {
+    font-size: 0.9rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    opacity: 0.85;
+    margin-bottom: 0.4rem;
+  }
+
+  .progress-info {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    font-size: 0.85rem;
+    opacity: 0.8;
+    margin-bottom: 1rem;
+  }
+
+  .round-dots {
+    display: flex;
+    gap: 6px;
+  }
+
+  .round-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.35);
+    transition: background 0.3s;
+  }
+
+  .round-dot.active { background: white; }
+
+  /* Ring container */
+  .ring-container {
+    position: relative;
+    width: var(--ring-size);
+    height: var(--ring-size);
+    margin: 0.5rem 0;
+    flex-shrink: 0;
+  }
+
+  .ring-bg {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.12);
+  }
+
+  .ring-progress {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: conic-gradient(
+      rgba(255,255,255,0.9) calc(var(--progress, 1) * 360deg),
+      transparent calc(var(--progress, 1) * 360deg)
+    );
+    mask: radial-gradient(farthest-side, transparent calc(100% - 8px), black calc(100% - 7px));
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 8px), black calc(100% - 7px));
+    transform: rotate(-90deg);
+    transition: none;
+  }
+
+  .ring-inner {
+    position: absolute;
+    inset: 12px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .countdown-time {
+    font-size: clamp(2.8rem, 14vw, 5.5rem);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+
+  .countdown-time.pulse {
+    animation: pulse 0.3s ease-out;
+  }
+
+  @keyframes pulse {
+    0% { transform: scale(1.08); opacity: 0.8; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .total-remaining {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .total-remaining svg {
+    width: 14px;
+    height: 14px;
+    fill: currentColor;
+    opacity: 0.8;
+  }
+
+  .exercise-name {
+    font-size: clamp(1.1rem, 5vw, 1.6rem);
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-align: center;
+    margin-top: 1.5rem;
+    min-height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .up-next {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    opacity: 0.6;
+    margin-top: 1.5rem;
+    margin-bottom: 0.3rem;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2rem;
+    padding: 1.5rem;
+    margin-top: auto;
+  }
+
+  .ctrl-btn {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,0.15);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.12s, background 0.2s;
+  }
+
+  .ctrl-btn:active { transform: scale(0.9); }
+
+  .ctrl-btn svg { width: 22px; height: 22px; fill: white; }
+
+  .ctrl-btn.main {
+    width: 68px;
+    height: 68px;
+    background: white;
+    box-shadow: 0 3px 15px rgba(0,0,0,0.2);
+  }
+
+  .ctrl-btn.main svg { fill: #333; width: 26px; height: 26px; }
+
+  /* ===== FINISHED SCREEN ===== */
+  #finished-screen {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    gap: 1.5rem;
+  }
+
+  .finish-icon {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3rem;
+  }
+
+  #finished-screen h2 {
+    font-size: 1.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+
+  .restart-btn {
+    padding: 1rem 3rem;
+    border-radius: 50px;
+    background: white;
+    color: #4353a4;
+    font-size: 1.1rem;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    margin-top: 1rem;
+    transition: transform 0.15s;
+  }
+
+  .restart-btn:active { transform: scale(0.95); }
+
+  /* Utility */
+  .hidden { display: none !important; }
+
+  @media (min-height: 700px) {
+    .ring-container {
+      --ring-size: min(75vw, 320px);
+    }
+  }
+
+  @media (min-height: 800px) {
+    #timer-screen { padding-top: 2.5rem; }
+    .exercise-name { margin-top: 2rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- IDLE SCREEN -->
+<div id="idle-screen">
+  <h1>Interval Timer</h1>
+  <div class="total-time" id="total-time">20:30</div>
+
+  <button class="play-btn" id="start-btn" aria-label="Start">
+    <svg viewBox="0 0 24 24"><polygon points="6,3 20,12 6,21"/></svg>
+  </button>
+
+  <div class="params">
+    <div class="param-row">
+      <span class="label">Work</span>
+      <span class="value">00:30</span>
+    </div>
+    <div class="param-row">
+      <span class="label">Rest</span>
+      <span class="value">00:15</span>
+    </div>
+    <div class="param-row">
+      <span class="label">Exercises</span>
+      <span class="value">9</span>
+    </div>
+    <div class="param-row">
+      <span class="label">Rounds</span>
+      <span class="value">3X</span>
+    </div>
+    <div class="param-row">
+      <span class="label">Round Reset</span>
+      <span class="value">00:30</span>
+    </div>
+  </div>
+</div>
+
+<!-- TIMER SCREEN -->
+<div id="timer-screen">
+  <div class="phase-label" id="phase-label">GET READY</div>
+
+  <div class="progress-info">
+    <span id="exercise-counter">Exercise 1/9</span>
+    <div class="round-dots" id="round-dots"></div>
+  </div>
+
+  <div class="ring-container">
+    <div class="ring-bg"></div>
+    <div class="ring-progress" id="ring-progress"></div>
+    <div class="ring-inner">
+      <div class="countdown-time" id="countdown">00:05</div>
+      <div class="total-remaining" id="total-remaining">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><polyline points="12,6 12,12 16,14" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        <span id="total-remaining-text">20:30</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="up-next-label" class="up-next hidden">UP NEXT:</div>
+  <div class="exercise-name" id="exercise-name"></div>
+
+  <div class="controls">
+    <button class="ctrl-btn" id="mute-btn" aria-label="Mute">
+      <svg viewBox="0 0 24 24" id="sound-icon"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+    </button>
+    <button class="ctrl-btn main" id="pause-btn" aria-label="Pause">
+      <svg viewBox="0 0 24 24" id="pause-icon"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+    </button>
+    <button class="ctrl-btn" id="skip-btn" aria-label="Skip">
+      <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2-8.14L11.03 12 8 14.14V9.86zM16 6h2v12h-2z"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- FINISHED SCREEN -->
+<div id="finished-screen">
+  <div class="finish-icon">&#10003;</div>
+  <h2>Workout Finished!</h2>
+  <button class="restart-btn" id="restart-btn">RESTART</button>
+</div>
+
+<script>
+// ===== CONFIG =====
+const WORK_TIME = 30;
+const REST_TIME = 15;
+const ROUND_REST_TIME = 30;
+const INTRO_TIME = 5;
+const NUM_ROUNDS = 3;
+const EXERCISES = [
+  { name: 'Kettlebell Swings', sound: 'KettleBell Swings.mp3' },
+  { name: 'Bicycle Crunches', sound: 'Bicycle Crunches.mp3' },
+  { name: 'Goblet Squats', sound: 'Goblet Sqats.mp3' },
+  { name: 'Flutter Kicks', sound: 'Flutter Kicks.mp3' },
+  { name: 'Russian Twist', sound: 'Russian Twist.mp3' },
+  { name: 'Kettlebell Press', sound: 'Kettlebell Press.mp3' },
+  { name: 'V-sit-ups', sound: 'V-sit-ups.mp3' },
+  { name: 'Kettlebell Round', sound: 'Ketlebell Round.mp3' },
+  { name: 'Reverse Crunch', sound: 'Reverse Crunch.mp3' },
+];
+
+// ===== AUDIO SYSTEM =====
+const sounds = {};
+const soundDurations = {};
+
+const soundFiles = [
+  'Three.mp3', 'Two.mp3', 'One.mp3', 'Go.mp3', 'Pause.mp3',
+  'Half-way through.mp3', 'Coming up.mp3', 'Workout Finished.mp3',
+  ...EXERCISES.map(e => e.sound)
+];
+
+let audioUnlocked = false;
+
+function preloadSounds() {
+  [...new Set(soundFiles)].forEach(file => {
+    const audio = new Audio('sounds/' + encodeURIComponent(file));
+    audio.preload = 'auto';
+    audio.load();
+    sounds[file] = audio;
+    audio.addEventListener('loadedmetadata', () => {
+      soundDurations[file] = audio.duration;
+    });
+  });
+}
+
+function playSound(file) {
+  if (muted || !sounds[file]) return;
+  // Clone the audio node for overlapping playback
+  const clone = sounds[file].cloneNode();
+  clone.play().catch(() => {});
+  // Clean up after playback
+  clone.addEventListener('ended', () => clone.remove());
+}
+
+// Unlock audio on iOS/Safari - called from user gesture (start button)
+function unlockAudio() {
+  if (audioUnlocked) return;
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const buf = ctx.createBuffer(1, 1, 22050);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.connect(ctx.destination);
+  src.start(0);
+  // Touch one audio element silently to unlock HTML5 audio
+  const first = Object.values(sounds)[0];
+  if (first) {
+    const vol = first.volume;
+    first.volume = 0;
+    first.play().then(() => { first.pause(); first.currentTime = 0; first.volume = vol; }).catch(() => { first.volume = vol; });
+  }
+  setTimeout(() => ctx.close().catch(() => {}), 200);
+  audioUnlocked = true;
+}
+
+// ===== STATE =====
+let state = 'IDLE';
+let currentExercise = 0;
+let currentRound = 0;
+let phaseDuration = 0;
+let totalTimeLeft = 0;
+let paused = false;
+let muted = false;
+let wakeLock = null;
+
+// Precise timer using timestamps
+let phaseStartTime = 0;   // Date.now() when phase started
+let pauseOffset = 0;      // accumulated pause time in ms
+let pauseStartTime = 0;   // when pause started
+let rafId = null;
+
+// Scheduled sound timeouts
+let soundTimeouts = [];
+
+function scheduleSound(file, delayMs) {
+  const id = setTimeout(() => playSound(file), Math.max(0, delayMs));
+  soundTimeouts.push(id);
+}
+
+function clearAllSoundTimeouts() {
+  soundTimeouts.forEach(id => clearTimeout(id));
+  soundTimeouts = [];
+}
+
+// Stop all currently playing sounds (for skip/mute)
+function stopAllPlayingSounds() {
+  // We use cloneNode for playback, so we can't easily stop clones.
+  // But the original sounds are not playing. This is acceptable.
+}
+
+// ===== DOM =====
+const $idle = document.getElementById('idle-screen');
+const $timer = document.getElementById('timer-screen');
+const $finished = document.getElementById('finished-screen');
+const $phaseLabel = document.getElementById('phase-label');
+const $exerciseCounter = document.getElementById('exercise-counter');
+const $roundDots = document.getElementById('round-dots');
+const $ringProgress = document.getElementById('ring-progress');
+const $countdown = document.getElementById('countdown');
+const $totalRemaining = document.getElementById('total-remaining-text');
+const $exerciseName = document.getElementById('exercise-name');
+const $upNextLabel = document.getElementById('up-next-label');
+const $pauseBtn = document.getElementById('pause-btn');
+const $pauseIcon = document.getElementById('pause-icon');
+
+// ===== HELPERS =====
+function calcTotalTime() {
+  const perRound = EXERCISES.length * WORK_TIME + (EXERCISES.length - 1) * REST_TIME;
+  return INTRO_TIME + NUM_ROUNDS * perRound + (NUM_ROUNDS - 1) * ROUND_REST_TIME;
+}
+
+function formatTime(seconds) {
+  const s = Math.max(0, Math.ceil(seconds));
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+
+function setBackground(st) {
+  const map = {
+    IDLE: 'var(--bg-idle)', INTRO: 'var(--bg-intro)',
+    WORK: 'var(--bg-work)', REST: 'var(--bg-rest)',
+    ROUND_REST: 'var(--bg-rest)', FINISHED: 'var(--bg-finished)',
+  };
+  document.body.style.background = map[st] || map.IDLE;
+}
+
+// ===== RENDER =====
+function renderRoundDots() {
+  $roundDots.innerHTML = '';
+  for (let i = 0; i < NUM_ROUNDS; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'round-dot' + (i <= currentRound ? ' active' : '');
+    $roundDots.appendChild(dot);
+  }
+}
+
+let lastDisplayedSecond = -1;
+
+function showScreen(screen) {
+  $idle.style.display = 'none';
+  $timer.style.display = 'none';
+  $finished.style.display = 'none';
+  screen.style.display = 'flex';
+}
+
+// ===== GET ELAPSED TIME IN CURRENT PHASE =====
+function getPhaseElapsed() {
+  const now = Date.now();
+  let elapsed = now - phaseStartTime - pauseOffset;
+  if (paused) elapsed = pauseStartTime - phaseStartTime - pauseOffset;
+  return Math.max(0, elapsed / 1000);
+}
+
+function getPhaseRemaining() {
+  return Math.max(0, phaseDuration - getPhaseElapsed());
+}
+
+// ===== DETERMINE NEXT EXERCISE (before advancePhase changes indices) =====
+function peekNextExercise() {
+  // What exercise comes after the current phase?
+  if (state === 'WORK') {
+    if (currentExercise + 1 < EXERCISES.length) return EXERCISES[currentExercise + 1];
+    if (currentRound + 1 < NUM_ROUNDS) return EXERCISES[0]; // first of next round
+    return null; // workout ends
+  }
+  if (state === 'REST') return EXERCISES[currentExercise + 1] || EXERCISES[currentExercise];
+  if (state === 'ROUND_REST') return EXERCISES[0];
+  if (state === 'INTRO') return EXERCISES[0];
+  return null;
+}
+
+// ===== SCHEDULE ALL SOUNDS FOR A PHASE =====
+// This is the key change: we schedule ALL sounds upfront when a phase begins,
+// using precise setTimeout delays relative to phase start.
+function schedulePhaseSounds() {
+  clearAllSoundTimeouts();
+
+  if (state === 'INTRO') {
+    // Immediately: "Coming up" + exercise name
+    playSound('Coming up.mp3');
+    const dur = soundDurations['Coming up.mp3'] || 1.0;
+    scheduleSound(EXERCISES[0].sound, dur * 1000 + 150);
+
+    // 3-2-1-GO: at seconds 3, 2, 1, 0 before end
+    // Phase is INTRO_TIME seconds. Sound at (INTRO_TIME - 3)s, (INTRO_TIME - 2)s, etc.
+    scheduleSound('Three.mp3', (INTRO_TIME - 3) * 1000);
+    scheduleSound('Two.mp3',   (INTRO_TIME - 2) * 1000);
+    scheduleSound('One.mp3',   (INTRO_TIME - 1) * 1000);
+    scheduleSound('Go.mp3',    INTRO_TIME * 1000);
+  }
+
+  if (state === 'WORK') {
+    // Halfway: "Half-way through" - must FINISH at the halfway point
+    const halfMs = (WORK_TIME / 2) * 1000;
+    const hwDur = (soundDurations['Half-way through.mp3'] || 1.2) * 1000;
+    scheduleSound('Half-way through.mp3', Math.max(0, halfMs - hwDur));
+
+    // 3-2-1-PAUSE at end (only if not last exercise of last round)
+    const isLast = currentExercise + 1 >= EXERCISES.length && currentRound + 1 >= NUM_ROUNDS;
+    scheduleSound('Three.mp3', (WORK_TIME - 3) * 1000);
+    scheduleSound('Two.mp3',   (WORK_TIME - 2) * 1000);
+    scheduleSound('One.mp3',   (WORK_TIME - 1) * 1000);
+    if (!isLast) {
+      const pauseDur = (soundDurations['Pause.mp3'] || 0.8) * 1000;
+      scheduleSound('Pause.mp3', Math.max(0, WORK_TIME * 1000 - pauseDur));
+    }
+  }
+
+  if (state === 'REST') {
+    // Coming up + next exercise - entire sequence must FINISH at halfway
+    const halfMs = (REST_TIME / 2) * 1000;
+    const nextEx = peekNextExercise();
+    if (nextEx) {
+      const cuDur = (soundDurations['Coming up.mp3'] || 1.0) * 1000;
+      const exDur = (soundDurations[nextEx.sound] || 1.2) * 1000;
+      const gap = 150; // small gap between sounds
+      const totalSoundLen = cuDur + gap + exDur;
+      const startAt = Math.max(0, halfMs - totalSoundLen);
+      scheduleSound('Coming up.mp3', startAt);
+      scheduleSound(nextEx.sound, startAt + cuDur + gap);
+    }
+
+    // 3-2-1-GO at end
+    scheduleSound('Three.mp3', (REST_TIME - 3) * 1000);
+    scheduleSound('Two.mp3',   (REST_TIME - 2) * 1000);
+    scheduleSound('One.mp3',   (REST_TIME - 1) * 1000);
+    scheduleSound('Go.mp3',    REST_TIME * 1000);
+  }
+
+  if (state === 'ROUND_REST') {
+    // Coming up + first exercise - entire sequence must FINISH at halfway
+    const halfMs = (ROUND_REST_TIME / 2) * 1000;
+    const cuDur = (soundDurations['Coming up.mp3'] || 1.0) * 1000;
+    const exDur = (soundDurations[EXERCISES[0].sound] || 1.2) * 1000;
+    const gap = 150;
+    const totalSoundLen = cuDur + gap + exDur;
+    const startAt = Math.max(0, halfMs - totalSoundLen);
+    scheduleSound('Coming up.mp3', startAt);
+    scheduleSound(EXERCISES[0].sound, startAt + cuDur + gap);
+
+    // 3-2-1-GO at end
+    scheduleSound('Three.mp3', (ROUND_REST_TIME - 3) * 1000);
+    scheduleSound('Two.mp3',   (ROUND_REST_TIME - 2) * 1000);
+    scheduleSound('One.mp3',   (ROUND_REST_TIME - 1) * 1000);
+    scheduleSound('Go.mp3',    ROUND_REST_TIME * 1000);
+  }
+}
+
+// ===== PHASE MANAGEMENT =====
+function startPhase(newState, duration) {
+  state = newState;
+  phaseDuration = duration;
+  phaseStartTime = Date.now();
+  pauseOffset = 0;
+  setBackground(newState);
+
+  if (newState === 'INTRO') {
+    $phaseLabel.textContent = 'GET READY';
+    $exerciseCounter.textContent = '';
+    $upNextLabel.classList.remove('hidden');
+    $upNextLabel.textContent = 'UP NEXT:';
+    $exerciseName.textContent = EXERCISES[0].name;
+  } else if (newState === 'WORK') {
+    $phaseLabel.textContent = 'WORK';
+    $exerciseCounter.textContent = `Exercise ${currentExercise + 1}/${EXERCISES.length}`;
+    $upNextLabel.classList.add('hidden');
+    $exerciseName.textContent = EXERCISES[currentExercise].name;
+  } else if (newState === 'REST' || newState === 'ROUND_REST') {
+    $phaseLabel.textContent = 'REST';
+    $exerciseCounter.textContent = `Exercise ${currentExercise + 1}/${EXERCISES.length}`;
+    const nextEx = peekNextExercise();
+    if (nextEx) {
+      $upNextLabel.classList.remove('hidden');
+      $upNextLabel.textContent = 'UP NEXT:';
+      $exerciseName.textContent = nextEx.name;
+    } else {
+      $upNextLabel.classList.add('hidden');
+      $exerciseName.textContent = '';
+    }
+  }
+
+  renderRoundDots();
+  // Schedule all sounds for this phase upfront
+  schedulePhaseSounds();
+}
+
+function advancePhase() {
+  clearAllSoundTimeouts();
+
+  if (state === 'INTRO') {
+    startPhase('WORK', WORK_TIME);
+  } else if (state === 'WORK') {
+    if (currentExercise + 1 < EXERCISES.length) {
+      currentExercise++;
+      startPhase('REST', REST_TIME);
+    } else if (currentRound + 1 < NUM_ROUNDS) {
+      currentRound++;
+      currentExercise = 0;
+      startPhase('ROUND_REST', ROUND_REST_TIME);
+    } else {
+      finishWorkout();
+    }
+  } else if (state === 'REST') {
+    startPhase('WORK', WORK_TIME);
+  } else if (state === 'ROUND_REST') {
+    startPhase('WORK', WORK_TIME);
+  }
+}
+
+// ===== ANIMATION LOOP (replaces setInterval) =====
+function animationLoop() {
+  if (state === 'FINISHED' || state === 'IDLE') return;
+
+  const remaining = getPhaseRemaining();
+  const displaySeconds = Math.ceil(remaining);
+
+  // Update countdown display
+  $countdown.textContent = formatTime(remaining);
+  if (displaySeconds !== lastDisplayedSecond) {
+    lastDisplayedSecond = displaySeconds;
+    $countdown.classList.remove('pulse');
+    void $countdown.offsetWidth;
+    $countdown.classList.add('pulse');
+  }
+
+  // Update total remaining
+  // Calculate how much total time has elapsed since workout started
+  const phaseElapsed = getPhaseElapsed();
+  const currentTotalRemaining = Math.max(0, totalTimeLeft - phaseElapsed);
+  $totalRemaining.textContent = formatTime(currentTotalRemaining);
+
+  // Update ring progress (smooth)
+  const progress = phaseDuration > 0 ? remaining / phaseDuration : 1;
+  $ringProgress.style.setProperty('--progress', Math.max(0, progress));
+
+  // Check if phase is done
+  if (remaining <= 0 && !paused) {
+    // Deduct this phase from totalTimeLeft
+    totalTimeLeft -= phaseDuration;
+    advancePhase();
+  }
+
+  rafId = requestAnimationFrame(animationLoop);
+}
+
+// ===== WAKE LOCK =====
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+  } catch (e) {}
+}
+
+function releaseWakeLock() {
+  if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+}
+
+// ===== CONTROLS =====
+function startWorkout() {
+  unlockAudio();
+
+  currentExercise = 0;
+  currentRound = 0;
+  totalTimeLeft = calcTotalTime();
+  paused = false;
+  lastDisplayedSecond = -1;
+
+  showScreen($timer);
+  requestWakeLock();
+  updatePauseIcon();
+
+  // Small delay to let audio unlock settle
+  setTimeout(() => {
+    startPhase('INTRO', INTRO_TIME);
+    rafId = requestAnimationFrame(animationLoop);
+  }, 300);
+}
+
+function finishWorkout() {
+  state = 'FINISHED';
+  clearAllSoundTimeouts();
+  cancelAnimationFrame(rafId);
+  releaseWakeLock();
+  setBackground('FINISHED');
+  showScreen($finished);
+  playSound('Workout Finished.mp3');
+}
+
+function togglePause() {
+  if (paused) {
+    // Resume: adjust pauseOffset and reschedule sounds
+    const pausedDuration = Date.now() - pauseStartTime;
+    pauseOffset += pausedDuration;
+    paused = false;
+    // Reschedule remaining sounds
+    schedulePhaseSounds_fromNow();
+    rafId = requestAnimationFrame(animationLoop);
+  } else {
+    // Pause: cancel scheduled sounds, stop animation
+    paused = true;
+    pauseStartTime = Date.now();
+    clearAllSoundTimeouts();
+    cancelAnimationFrame(rafId);
+  }
+  updatePauseIcon();
+}
+
+// Reschedule sounds for the remaining portion of the current phase
+function schedulePhaseSounds_fromNow() {
+  clearAllSoundTimeouts();
+  const elapsed = getPhaseElapsed();
+  const remaining = phaseDuration - elapsed;
+
+  // Helper: schedule sound at absolute phase time (seconds from phase start)
+  // Only schedule if it hasn't happened yet
+  function s(file, phaseTimeSec) {
+    const delayMs = (phaseTimeSec - elapsed) * 1000;
+    if (delayMs > 50) { // only if still in the future (with small buffer)
+      scheduleSound(file, delayMs);
+    }
+  }
+
+  if (state === 'INTRO') {
+    s('Three.mp3', INTRO_TIME - 3);
+    s('Two.mp3',   INTRO_TIME - 2);
+    s('One.mp3',   INTRO_TIME - 1);
+    s('Go.mp3',    INTRO_TIME);
+  }
+
+  if (state === 'WORK') {
+    const hwDur = soundDurations['Half-way through.mp3'] || 1.2;
+    s('Half-way through.mp3', WORK_TIME / 2 - hwDur);
+    s('Three.mp3', WORK_TIME - 3);
+    s('Two.mp3',   WORK_TIME - 2);
+    s('One.mp3',   WORK_TIME - 1);
+    const isLast = currentExercise + 1 >= EXERCISES.length && currentRound + 1 >= NUM_ROUNDS;
+    if (!isLast) {
+      const pauseDur = soundDurations['Pause.mp3'] || 0.8;
+      s('Pause.mp3', WORK_TIME - pauseDur);
+    }
+  }
+
+  if (state === 'REST') {
+    const nextEx = peekNextExercise();
+    if (nextEx) {
+      const cuDur = soundDurations['Coming up.mp3'] || 1.0;
+      const exDur = soundDurations[nextEx.sound] || 1.2;
+      const totalLen = cuDur + 0.15 + exDur;
+      const startAt = REST_TIME / 2 - totalLen;
+      s('Coming up.mp3', startAt);
+      s(nextEx.sound, startAt + cuDur + 0.15);
+    }
+    s('Three.mp3', REST_TIME - 3);
+    s('Two.mp3',   REST_TIME - 2);
+    s('One.mp3',   REST_TIME - 1);
+    s('Go.mp3',    REST_TIME);
+  }
+
+  if (state === 'ROUND_REST') {
+    const cuDur = soundDurations['Coming up.mp3'] || 1.0;
+    const exDur = soundDurations[EXERCISES[0].sound] || 1.2;
+    const totalLen = cuDur + 0.15 + exDur;
+    const startAt = ROUND_REST_TIME / 2 - totalLen;
+    s('Coming up.mp3', startAt);
+    s(EXERCISES[0].sound, startAt + cuDur + 0.15);
+    s('Three.mp3', ROUND_REST_TIME - 3);
+    s('Two.mp3',   ROUND_REST_TIME - 2);
+    s('One.mp3',   ROUND_REST_TIME - 1);
+    s('Go.mp3',    ROUND_REST_TIME);
+  }
+}
+
+function updatePauseIcon() {
+  if (paused) {
+    $pauseIcon.innerHTML = '<polygon points="6,3 20,12 6,21"/>';
+  } else {
+    $pauseIcon.innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
+  }
+}
+
+function skipPhase() {
+  clearAllSoundTimeouts();
+  totalTimeLeft -= phaseDuration;
+  advancePhase();
+}
+
+function toggleMute() {
+  muted = !muted;
+  const icon = document.getElementById('sound-icon');
+  if (muted) {
+    clearAllSoundTimeouts();
+    icon.innerHTML = '<path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>';
+  } else {
+    // Reschedule sounds for remaining phase time
+    schedulePhaseSounds_fromNow();
+    icon.innerHTML = '<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>';
+  }
+}
+
+function restart() {
+  clearAllSoundTimeouts();
+  cancelAnimationFrame(rafId);
+  state = 'IDLE';
+  setBackground('IDLE');
+  showScreen($idle);
+  releaseWakeLock();
+}
+
+// ===== INIT =====
+preloadSounds();
+
+document.getElementById('start-btn').addEventListener('click', startWorkout);
+$pauseBtn.addEventListener('click', togglePause);
+document.getElementById('skip-btn').addEventListener('click', skipPhase);
+document.getElementById('mute-btn').addEventListener('click', toggleMute);
+document.getElementById('restart-btn').addEventListener('click', restart);
+
+document.getElementById('total-time').textContent = formatTime(calcTotalTime());
+
+// ===== SERVICE WORKER (PWA) =====
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+
+</body>
+</html>

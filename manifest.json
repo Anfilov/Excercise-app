@@ -1,0 +1,18 @@
+{
+  "name": "Interval Timer",
+  "short_name": "Timer",
+  "description": "Interval workout timer with voice cues",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#e84c3d",
+  "theme_color": "#e84c3d",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
