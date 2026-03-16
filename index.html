@@ -466,7 +466,7 @@ let audioCtx = null;
 let soundsReady = false;
 
 const soundFiles = [
-  'Three.mp3', 'Two.mp3', 'One.mp3', 'Go.mp3', 'Pause.mp3',
+  'Three.mp3', 'Two.mp3', 'One.mp3', 'Go.mp3', 'Take-a-rest.mp3',
   'Half-way through.mp3', 'Coming up.mp3', 'Workout Finished.mp3',
   ...EXERCISES.map(e => e.sound)
 ];
@@ -663,7 +663,7 @@ function peekNextExercise() {
     if (currentRound + 1 < NUM_ROUNDS) return EXERCISES[0]; // first of next round
     return null; // workout ends
   }
-  if (state === 'REST') return EXERCISES[currentExercise + 1] || EXERCISES[currentExercise];
+  if (state === 'REST') return EXERCISES[currentExercise];
   if (state === 'ROUND_REST') return EXERCISES[0];
   if (state === 'INTRO') return EXERCISES[0];
   return null;
@@ -701,8 +701,8 @@ function schedulePhaseSounds() {
     scheduleSound('Two.mp3',   (WORK_TIME - 2) * 1000);
     scheduleSound('One.mp3',   (WORK_TIME - 1) * 1000);
     if (!isLast) {
-      const pauseDur = (soundDurations['Pause.mp3'] || 0.8) * 1000;
-      scheduleSound('Pause.mp3', Math.max(0, WORK_TIME * 1000 - pauseDur));
+      const pauseDur = (soundDurations['Take-a-rest.mp3'] || 0.8) * 1000;
+      scheduleSound('Take-a-rest.mp3', Math.max(0, WORK_TIME * 1000 - pauseDur));
     }
   }
 
@@ -934,8 +934,8 @@ function schedulePhaseSounds_fromNow() {
     s('One.mp3',   WORK_TIME - 1);
     const isLast = currentExercise + 1 >= EXERCISES.length && currentRound + 1 >= NUM_ROUNDS;
     if (!isLast) {
-      const pauseDur = soundDurations['Pause.mp3'] || 0.8;
-      s('Pause.mp3', WORK_TIME - pauseDur);
+      const pauseDur = soundDurations['Take-a-rest.mp3'] || 0.8;
+      s('Take-a-rest.mp3', WORK_TIME - pauseDur);
     }
   }
 
