@@ -444,7 +444,7 @@
 const WORK_TIME = 30;
 const REST_TIME = 15;
 const ROUND_REST_TIME = 30;
-const INTRO_TIME = 5;
+const INTRO_TIME = 30;
 const NUM_ROUNDS = 3;
 const EXERCISES = [
   { name: 'Kettlebell Swings', sound: 'KettleBell Swings.mp3' },
@@ -701,8 +701,7 @@ function schedulePhaseSounds() {
     scheduleSound('Two.mp3',   (WORK_TIME - 2) * 1000);
     scheduleSound('One.mp3',   (WORK_TIME - 1) * 1000);
     if (!isLast) {
-      const pauseDur = (soundDurations['Take-a-rest.mp3'] || 0.8) * 1000;
-      scheduleSound('Take-a-rest.mp3', Math.max(0, WORK_TIME * 1000 - pauseDur));
+      scheduleSound('Take-a-rest.mp3', WORK_TIME * 1000);
     }
   }
 
@@ -934,8 +933,7 @@ function schedulePhaseSounds_fromNow() {
     s('One.mp3',   WORK_TIME - 1);
     const isLast = currentExercise + 1 >= EXERCISES.length && currentRound + 1 >= NUM_ROUNDS;
     if (!isLast) {
-      const pauseDur = soundDurations['Take-a-rest.mp3'] || 0.8;
-      s('Take-a-rest.mp3', WORK_TIME - pauseDur);
+      s('Take-a-rest.mp3', WORK_TIME);
     }
   }
 
